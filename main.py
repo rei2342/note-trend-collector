@@ -17,7 +17,7 @@ from collectors.note_collector import NoteCollector
 from collectors.hatena_collector import HatenaCollector
 from collectors.x_collector import XCollector
 from analyzer import ContentAnalyzer
-from summarizer import TrendSummarizer
+from 要約ツール import TrendSummarizer
 from mailer import EmailSender
 
 handlers = [logging.StreamHandler(sys.stdout)]
