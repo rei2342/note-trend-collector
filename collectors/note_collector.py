@@ -19,7 +19,7 @@ class NoteArticle:
     is_paid: bool = False
     body_text: str = ""
     headings: list[str] = field(default_factory=list)
-    paid_position: Optional[str] = None  # "early" / "middle" / "late" / None
+    paid_position: Optional[str] = None
     description: str = ""
 
 
@@ -47,7 +47,6 @@ class NoteCollector:
             except Exception as e:
                 logger.warning(f"タグ '{tag}' の収集失敗: {e}")
 
-        # 記事本文・見出しを取得（上位記事に絞る）
         top_articles = sorted(articles, key=lambda a: a.like_count, reverse=True)[
             : config.NOTE_ARTICLES_PER_TAG * 2
         ]
@@ -61,20 +60,34 @@ class NoteCollector:
         return top_articles
 
     def _fetch_by_tag(self, tag: str) -> list[NoteArticle]:
-        url = f"{self.API_BASE}/searches/notes"
+        encoded_tag = requests.utils.quote(tag)
+        url = f"{self.API_BASE}/tags/{encoded_tag}/notes"
         params = {
-            "context": "note",
-            "q": tag,
             "size": config.NOTE_ARTICLES_PER_TAG,
             "page": 1,
             "sort": "like",
         }
-        resp = self.session.get(url, params=params, timeout=config.REQUEST_TIMEOUT)
-        resp.raise_for_status()
-        data = resp.json()
+        try:
+            resp = self.session.get(url, params=params, timeout=config.REQUEST_TIMEOUT)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception:
+            # フォールバック: 検索APIを試す
+            url2 = f"{self.API_BASE}/searches"
+            params2 = {
+                "context": "note",
+                "q": tag,
+                "size": config.NOTE_ARTICLES_PER_TAG,
+                "page": 1,
+                "sort": "like",
+            }
+            resp = self.session.get(url2, params=params2, timeout=config.REQUEST_TIMEOUT)
+            resp.raise_for_status()
+            data = resp.json()
 
         articles = []
-        for item in data.get("data", {}).get("notes", []):
+        notes = data.get("data", {}).get("notes", [])
+        for item in notes:
             note_url = f"{self.ARTICLE_BASE}/{item.get('user', {}).get('urlname', '')}/n/{item.get('key', '')}"
             articles.append(
                 NoteArticle(
@@ -94,7 +107,6 @@ class NoteCollector:
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "lxml")
 
-        # 見出し抽出
         article_body = soup.find("div", class_=lambda c: c and "note-common-styles__textnote-body" in c)
         if not article_body:
             article_body = soup.find("div", {"data-testid": "note-body"})
@@ -107,9 +119,8 @@ class NoteCollector:
                 text = tag.get_text(strip=True)
                 if text:
                     headings.append(f"{tag.name}: {text}")
-            article.headings = headings[:15]  # 最大15件
+            article.headings = headings[:15]
 
-            # 有料ブロックの位置検出
             paid_block = article_body.find(
                 lambda t: t.name and t.get_text(strip=True) in ["続きをみるには", "この続きをみるには", "有料記事"]
             )
@@ -117,7 +128,6 @@ class NoteCollector:
                 paid_block = soup.find("div", class_=lambda c: c and "paid" in str(c).lower())
 
             if paid_block:
-                all_blocks = list(article_body.children)
                 paid_idx = None
                 for i, child in enumerate(article_body.descendants):
                     if child == paid_block:
@@ -133,7 +143,6 @@ class NoteCollector:
                     else:
                         article.paid_position = "late"
 
-            # 概要テキスト（未取得なら本文冒頭から）
             if not article.description:
                 body_text = article_body.get_text(separator=" ", strip=True)
                 article.description = body_text[:200]
