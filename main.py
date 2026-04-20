@@ -9,7 +9,6 @@ import sys
 import logging
 from pathlib import Path
 
-# スクリプトのディレクトリをPYTHONPATHに追加
 sys.path.insert(0, str(Path(__file__).parent))
 
 import config
@@ -21,7 +20,6 @@ from summarizer import TrendSummarizer
 from mailer import EmailSender
 
 handlers = [logging.StreamHandler(sys.stdout)]
-# ローカル実行時のみファイルログを追加
 log_file = Path(__file__).parent / "run.log"
 if log_file.parent.exists() and not os.getenv("CI"):
     handlers.append(logging.FileHandler(log_file, encoding="utf-8"))
@@ -52,7 +50,6 @@ def main():
     validate_config()
     logger.info("=== 週次トレンド収集開始 ===")
 
-    # 1. データ収集
     logger.info("--- note 収集 ---")
     note_articles = NoteCollector().collect()
     logger.info(f"note: {len(note_articles)}件収集")
@@ -65,18 +62,15 @@ def main():
     x_posts = XCollector().collect()
     logger.info(f"X: {len(x_posts)}件収集")
 
-    # 2. 分析
     logger.info("--- 構成分析 ---")
     analyzer = ContentAnalyzer()
     note_data = analyzer.analyze_note_articles(note_articles)
     hatena_data = analyzer.analyze_hatena_entries(hatena_entries)
 
-   # 3. サマリー生成
-    logger.info("--- サマリー生成 ---")
+    logger.info("--- AI分析サマリー生成 ---")
     summarizer = TrendSummarizer()
     trend_summary = summarizer.generate_summary(note_data, hatena_data, x_posts)
 
-    # 4. メール送信
     logger.info("--- メール送信 ---")
     mailer = EmailSender()
     mailer.send_weekly_report(note_data, hatena_data, x_posts, trend_summary)
