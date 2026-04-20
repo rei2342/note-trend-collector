@@ -8,6 +8,7 @@ import os
 import json
 import urllib.request
 import urllib.error
+from datetime import datetime
 from collections import Counter
 from collectors.x_collector import XPost
 from analyzer import AnalyzedNote, AnalyzedHatena, PatternStats
@@ -31,8 +32,8 @@ SYSTEM_PROMPT = """あなたはnoteで売れるコンテンツを作るための
 
 
 def _call_claude_api(prompt: str) -> str:
-    api_key = config.ANTHROPIC_API_KEY
-    logger.info(f"ANTHROPIC_API_KEY設定状況: {'あり' if api_key else 'なし'}")
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    logger.info(f"ANTHROPIC_API_KEY直接取得: {'あり' if api_key else 'なし'}")
     if not api_key:
         logger.warning("ANTHROPIC_API_KEY未設定のためルールベースサマリーにフォールバック")
         return ""
@@ -75,7 +76,12 @@ def _build_analysis_prompt(
     hatena_stats: PatternStats,
     x_posts: list[XPost],
 ) -> str:
-    lines = ["# 今週のトレンドデータ（分析してください）", ""]
+    today = datetime.now().strftime("%Y年%m月%d日")
+    lines = [
+        "# 今週のトレンドデータ（分析してください）",
+        f"分析実行日: {today}（レポート内の日付はこの日付を使用してください）",
+        "",
+    ]
 
     lines.append("## note人気記事（いいね順）")
     lines.append(f"収集件数: {len(note_articles)}件")
@@ -115,7 +121,7 @@ def _build_analysis_prompt(
                 lines.append(f"  note: {p.note_url}")
             lines.append("")
     else:
-        lines.append("## X: データなし（Bearer Token未設定）")
+        lines.append("## X: データなし")
         lines.append("")
 
     lines.append("---")
@@ -197,37 +203,14 @@ class TrendSummarizer:
         note_articles, note_stats = note_data
         hatena_entries, hatena_stats = hatena_data
 
-        import os
         api_key = os.getenv("ANTHROPIC_API_KEY", "")
-        logger.info(f"ANTHROPIC_API_KEY直接取得: {'あり' if api_key else 'なし'}")
-
         if api_key:
             logger.info("Claude APIでサマリー生成中...")
             prompt = _build_analysis_prompt(note_articles, note_stats, hatena_entries, hatena_stats, x_posts)
-            # 一時的にapi_keyを直接渡す
-            payload = json.dumps({
-                "model": "claude-opus-4-5",
-                "max_tokens": 2000,
-                "system": SYSTEM_PROMPT,
-                "messages": [{"role": "user", "content": prompt}],
-            }).encode("utf-8")
-            req = urllib.request.Request(
-                "https://api.anthropic.com/v1/messages",
-                data=payload,
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                method="POST",
-            )
-            try:
-                with urllib.request.urlopen(req, timeout=60) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    result = data["content"][0]["text"]
-                    logger.info("Claude APIサマリー生成完了")
-                    return "## 今週のトレンドサマリー（AI分析）\n\n" + result
-            except Exception as e:
-                logger.error(f"Claude API失敗: {e}")
+            result = _call_claude_api(prompt)
+            if result:
+                logger.info("Claude APIサマリー生成完了")
+                return "## 今週のトレンドサマリー（AI分析）\n\n" + result
+            logger.warning("Claude API失敗、ルールベースにフォールバック")
 
         return _fallback_summary(note_articles, note_stats, hatena_entries, hatena_stats, x_posts)
