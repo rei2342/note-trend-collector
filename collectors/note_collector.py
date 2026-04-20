@@ -24,7 +24,7 @@ class NoteArticle:
 
 
 class NoteCollector:
-    API_BASE = "https://note.com/api/v2"
+    API_BASE = "https://note.com/api/v3"
     ARTICLE_BASE = "https://note.com"
 
     def __init__(self):
@@ -61,29 +61,15 @@ class NoteCollector:
 
     def _fetch_by_tag(self, tag: str) -> list[NoteArticle]:
         encoded_tag = requests.utils.quote(tag)
-        url = f"{self.API_BASE}/tags/{encoded_tag}/notes"
+        url = f"{self.API_BASE}/hashtags/{encoded_tag}/notes"
         params = {
-            "size": config.NOTE_ARTICLES_PER_TAG,
+            "order": "popular",
             "page": 1,
-            "sort": "like",
+            "paid_only": "false",
         }
-        try:
-            resp = self.session.get(url, params=params, timeout=config.REQUEST_TIMEOUT)
-            resp.raise_for_status()
-            data = resp.json()
-        except Exception:
-            # フォールバック: 検索APIを試す
-            url2 = f"{self.API_BASE}/searches"
-            params2 = {
-                "context": "note",
-                "q": tag,
-                "size": config.NOTE_ARTICLES_PER_TAG,
-                "page": 1,
-                "sort": "like",
-            }
-            resp = self.session.get(url2, params=params2, timeout=config.REQUEST_TIMEOUT)
-            resp.raise_for_status()
-            data = resp.json()
+        resp = self.session.get(url, params=params, timeout=config.REQUEST_TIMEOUT)
+        resp.raise_for_status()
+        data = resp.json()
 
         articles = []
         notes = data.get("data", {}).get("notes", [])
