@@ -197,13 +197,37 @@ class TrendSummarizer:
         note_articles, note_stats = note_data
         hatena_entries, hatena_stats = hatena_data
 
-        if config.ANTHROPIC_API_KEY:
+        import os
+        api_key = os.getenv("ANTHROPIC_API_KEY", "")
+        logger.info(f"ANTHROPIC_API_KEY直接取得: {'あり' if api_key else 'なし'}")
+
+        if api_key:
             logger.info("Claude APIでサマリー生成中...")
             prompt = _build_analysis_prompt(note_articles, note_stats, hatena_entries, hatena_stats, x_posts)
-            result = _call_claude_api(prompt)
-            if result:
-                logger.info("Claude APIサマリー生成完了")
-                return "## 今週のトレンドサマリー（AI分析）\n\n" + result
-            logger.warning("Claude API失敗、ルールベースにフォールバック")
+            # 一時的にapi_keyを直接渡す
+            payload = json.dumps({
+                "model": "claude-opus-4-5",
+                "max_tokens": 2000,
+                "system": SYSTEM_PROMPT,
+                "messages": [{"role": "user", "content": prompt}],
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                "https://api.anthropic.com/v1/messages",
+                data=payload,
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    result = data["content"][0]["text"]
+                    logger.info("Claude APIサマリー生成完了")
+                    return "## 今週のトレンドサマリー（AI分析）\n\n" + result
+            except Exception as e:
+                logger.error(f"Claude API失敗: {e}")
 
         return _fallback_summary(note_articles, note_stats, hatena_entries, hatena_stats, x_posts)
