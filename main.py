@@ -71,8 +71,8 @@ def main():
     note_data = analyzer.analyze_note_articles(note_articles)
     hatena_data = analyzer.analyze_hatena_entries(hatena_entries)
 
-    # 3. ルールベースサマリー生成
-    logger.info("--- ルールベースサマリー生成 ---")
+   # 3. サマリー生成
+    logger.info("--- サマリー生成 ---")
     summarizer = TrendSummarizer()
     trend_summary = summarizer.generate_summary(note_data, hatena_data, x_posts)
 
