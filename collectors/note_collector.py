@@ -39,6 +39,7 @@ class NoteCollector:
             logger.info(f"note収集中: #{tag}")
             try:
                 tag_articles = self._fetch_by_tag(tag)
+                logger.info(f"タグ '{tag}': {len(tag_articles)}件取得")
                 for a in tag_articles:
                     if a.url not in seen_urls:
                         seen_urls.add(a.url)
@@ -71,19 +72,23 @@ class NoteCollector:
         resp.raise_for_status()
         data = resp.json()
 
+        data_obj = data.get("data") or {}
+        notes = data_obj.get("notes") or []
+
         articles = []
-        notes = data.get("data", {}).get("notes", [])
         for item in notes:
-            note_url = f"{self.ARTICLE_BASE}/{item.get('user', {}).get('urlname', '')}/n/{item.get('key', '')}"
+            user = item.get("user") or {}
+            note_url = f"{self.ARTICLE_BASE}/{user.get('urlname', '')}/n/{item.get('key', '')}"
+            desc = item.get("body") or ""
             articles.append(
                 NoteArticle(
                     title=item.get("name", ""),
                     url=note_url,
-                    author=item.get("user", {}).get("name", ""),
+                    author=user.get("name", ""),
                     tag=tag,
-                    like_count=item.get("likeCount", 0),
+                    like_count=item.get("like_count", 0),
                     is_paid=item.get("price", 0) > 0,
-                    description=item.get("description", "")[:200],
+                    description=desc[:200],
                 )
             )
         return articles
