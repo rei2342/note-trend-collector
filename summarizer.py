@@ -1,6 +1,9 @@
 """
 Claude APIを使ったトレンドサマリー生成
-収集・分析データをClaudeに渡し、note売上最大化の視点で深く分析する。
+
+★ カスタマイズポイント：
+  SYSTEM_PROMPT を自分の発信ジャンルに合わせて書き換えると、
+  Claude AIの分析視点が変わります。
 """
 
 import logging
@@ -9,37 +12,39 @@ import json
 import urllib.request
 import urllib.error
 from datetime import datetime
-from collections import Counter
-from collectors.x_collector import XPost
 from analyzer import AnalyzedNote, AnalyzedHatena, PatternStats
 import config
 
 logger = logging.getLogger(__name__)
 
+# ──────────────────────────────────────
+# ★ ここを自分のジャンルに合わせて書き換えるとAIの分析視点が変わります
+# ──────────────────────────────────────
 SYSTEM_PROMPT = """あなたはnoteで売れるコンテンツを作るための戦略アドバイザーです。
-毎週月曜日に、note・はてブ・Xのトレンドデータを分析し、「今週どんなnoteを書けば売れるか」を導き出すのが仕事です。
+毎週月曜日に、note・はてブのトレンドデータを分析し、「今週どんなnoteを書けば売れるか」を導き出すのが仕事です。
 
 分析視点：
 - どのタイトルパターン・テーマが今週バズっているか
 - 有料記事の設計（有料化位置・価格設定・見出し構成）で成功しているパターン
 - 読者が今週「何に悩み・何を求めているか」の本質的なニーズ
-- はてブ・Xのバズから、noteで先取りできるテーマ
+- はてブのバズから、noteで先取りできるテーマ
 - 具体的に「今週書くべきnoteのタイトル案」を複数提示
 
 出力形式：Markdown（日本語）
 読む人は一人のnoteクリエイターで、売れるコンテンツを作りたいという強い意志がある。
 分析は深く、具体的に。抽象論ではなく「明日使えるインサイト」を出す。"""
 
+CLAUDE_MODEL = "claude-sonnet-4-5"
+
 
 def _call_claude_api(prompt: str) -> str:
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
-    logger.info(f"ANTHROPIC_API_KEY直接取得: {'あり' if api_key else 'なし'}")
     if not api_key:
         logger.warning("ANTHROPIC_API_KEY未設定のためルールベースサマリーにフォールバック")
         return ""
 
     payload = json.dumps({
-        "model": "claude-opus-4-5",
+        "model": CLAUDE_MODEL,
         "max_tokens": 2000,
         "system": SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": prompt}],
@@ -74,12 +79,11 @@ def _build_analysis_prompt(
     note_stats: PatternStats,
     hatena_entries: list[AnalyzedHatena],
     hatena_stats: PatternStats,
-    x_posts: list[XPost],
 ) -> str:
     today = datetime.now().strftime("%Y年%m月%d日")
     lines = [
         "# 今週のトレンドデータ（分析してください）",
-        f"分析実行日: {today}（レポート内の日付はこの日付を使用してください）",
+        f"分析実行日: {today}",
         "",
     ]
 
@@ -112,18 +116,6 @@ def _build_analysis_prompt(
             lines.append(f"  概要: {e.description[:100]}")
         lines.append("")
 
-    if x_posts:
-        lines.append("## Xバズ投稿（note関連・いいね順）")
-        for p in x_posts[:10]:
-            lines.append(f"- いいね{p.like_count} RT{p.retweet_count} @{p.author_name}")
-            lines.append(f"  {p.text[:150]}")
-            if p.note_url:
-                lines.append(f"  note: {p.note_url}")
-            lines.append("")
-    else:
-        lines.append("## X: データなし")
-        lines.append("")
-
     lines.append("---")
     lines.append("上記データをもとに、以下の構成でレポートを作成してください：")
     lines.append("")
@@ -133,7 +125,7 @@ def _build_analysis_prompt(
     lines.append("### 2. 売れているnoteの共通パターン")
     lines.append("（タイトル・構成・有料設計・テーマの勝ちパターンを具体的に）")
     lines.append("")
-    lines.append("### 3. はてブ・Xから先取りできるテーマ")
+    lines.append("### 3. はてブから先取りできるテーマ")
     lines.append("（まだnoteで書かれていないが、今週バズっている話題からnote化できるネタ）")
     lines.append("")
     lines.append("### 4. 今週書くべきnoteタイトル案（5本以上）")
@@ -150,22 +142,28 @@ def _fallback_summary(
     note_stats: PatternStats,
     hatena_entries: list[AnalyzedHatena],
     hatena_stats: PatternStats,
-    x_posts: list[XPost],
 ) -> str:
     top_tag = note_stats.top_tags[0] if note_stats.top_tags else "キャリア"
-    top_pattern = max(note_stats.title_pattern_counts, key=note_stats.title_pattern_counts.get) if note_stats.title_pattern_counts else "その他"
+    top_pattern = (
+        max(note_stats.title_pattern_counts, key=note_stats.title_pattern_counts.get)
+        if note_stats.title_pattern_counts
+        else "その他"
+    )
 
     sections = []
 
     theme_lines = ["## 今週のトレンドサマリー", "", "### 1. 今週のキーテーマ"]
     THEME_KEYWORDS = {
-        "AI活用": ["AI", "ChatGPT", "Claude", "生成AI", "自動化"],
-        "キャリア転換": ["転職", "独立", "フリーランス", "起業", "副業"],
-        "収益化": ["収益", "マネタイズ", "有料", "稼ぐ", "収入"],
-        "スキルアップ": ["スキル", "勉強", "学習", "資格"],
+        "AI活用":         ["AI", "ChatGPT", "Claude", "生成AI", "自動化"],
+        "キャリア転換":   ["転職", "独立", "フリーランス", "起業", "副業"],
+        "収益化":         ["収益", "マネタイズ", "有料", "稼ぐ", "収入"],
+        "スキルアップ":   ["スキル", "勉強", "学習", "資格"],
         "マーケティング": ["マーケティング", "集客", "SNS", "フォロワー"],
     }
-    all_text = " ".join([a.title + " " + a.description for a in note_articles] + [e.title + " " + e.description for e in hatena_entries])
+    all_text = " ".join(
+        [a.title + " " + a.description for a in note_articles]
+        + [e.title + " " + e.description for e in hatena_entries]
+    )
     for theme, keywords in THEME_KEYWORDS.items():
         hit_kw = [kw for kw in keywords if kw in all_text]
         if hit_kw:
@@ -174,10 +172,11 @@ def _fallback_summary(
 
     pattern_lines = ["### 2. 勝ちパターン分析"]
     if note_stats.title_pattern_counts:
-        top_name, top_cnt = sorted(note_stats.title_pattern_counts.items(), key=lambda x: -x[1])[0]
+        top_name, top_cnt = sorted(
+            note_stats.title_pattern_counts.items(), key=lambda x: -x[1]
+        )[0]
         pattern_lines.append(f"- **タイトルの型**: 「{top_name}」が最多（{top_cnt}件）")
-    avg = note_stats.avg_heading_count
-    pattern_lines.append(f"- **見出し構成**: 平均{avg}個")
+    pattern_lines.append(f"- **見出し構成**: 平均{note_stats.avg_heading_count}個")
     sections.append("\n".join(pattern_lines))
 
     pickup_lines = ["### 3. 今週注目の記事"]
@@ -185,10 +184,15 @@ def _fallback_summary(
         pickup_lines.append(f"- **[note]** [{a.title}]({a.url})（いいね {a.like_count}）")
     if hatena_entries:
         top_h = max(hatena_entries, key=lambda e: e.bookmark_count)
-        pickup_lines.append(f"- **[はてブ]** [{top_h.title}]({top_h.url})（ブクマ {top_h.bookmark_count}）")
+        pickup_lines.append(
+            f"- **[はてブ]** [{top_h.title}]({top_h.url})（ブクマ {top_h.bookmark_count}）"
+        )
     sections.append("\n".join(pickup_lines))
 
-    sections.append(f"### 4. 一言まとめ\n「**{top_tag}**」テーマ × 「**{top_pattern}**」型タイトルの組み合わせが今週の主役。")
+    sections.append(
+        f"### 4. 一言まとめ\n「**{top_tag}**」テーマ × 「**{top_pattern}**」型タイトルの組み合わせが今週の主役。\n\n"
+        f"> Claude APIを設定すると、より詳細なAI分析レポートが届きます。"
+    )
 
     return "\n\n".join(sections)
 
@@ -198,7 +202,6 @@ class TrendSummarizer:
         self,
         note_data: tuple[list[AnalyzedNote], PatternStats],
         hatena_data: tuple[list[AnalyzedHatena], PatternStats],
-        x_posts: list[XPost],
     ) -> str:
         note_articles, note_stats = note_data
         hatena_entries, hatena_stats = hatena_data
@@ -206,11 +209,13 @@ class TrendSummarizer:
         api_key = os.getenv("ANTHROPIC_API_KEY", "")
         if api_key:
             logger.info("Claude APIでサマリー生成中...")
-            prompt = _build_analysis_prompt(note_articles, note_stats, hatena_entries, hatena_stats, x_posts)
+            prompt = _build_analysis_prompt(
+                note_articles, note_stats, hatena_entries, hatena_stats
+            )
             result = _call_claude_api(prompt)
             if result:
                 logger.info("Claude APIサマリー生成完了")
                 return "## 今週のトレンドサマリー（AI分析）\n\n" + result
             logger.warning("Claude API失敗、ルールベースにフォールバック")
 
-        return _fallback_summary(note_articles, note_stats, hatena_entries, hatena_stats, x_posts)
+        return _fallback_summary(note_articles, note_stats, hatena_entries, hatena_stats)
