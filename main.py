@@ -9,7 +9,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 import config
 from collectors.note_collector import NoteCollector
 from collectors.hatena_collector import HatenaCollector
-from collectors.x_collector import XCollector
 from analyzer import ContentAnalyzer
 from summarizer import TrendSummarizer
 from mailer import EmailSender
@@ -47,20 +46,15 @@ def main():
     hatena_entries = HatenaCollector().collect()
     logger.info(f"はてブ: {len(hatena_entries)}件収集")
 
-    x_posts = XCollector().collect()
-    logger.info(f"X: {len(x_posts)}件収集")
-
     analyzer = ContentAnalyzer()
     note_data = analyzer.analyze_note_articles(note_articles)
     hatena_data = analyzer.analyze_hatena_entries(hatena_entries)
 
-    logger.info("--- CLAUDE_API_SUMMARY_START ---")
     summarizer = TrendSummarizer()
-    trend_summary = summarizer.generate_summary(note_data, hatena_data, x_posts)
-    logger.info("--- CLAUDE_API_SUMMARY_END ---")
+    trend_summary = summarizer.generate_summary(note_data, hatena_data)
 
     mailer = EmailSender()
-    mailer.send_weekly_report(note_data, hatena_data, x_posts, trend_summary)
+    mailer.send_weekly_report(note_data, hatena_data, trend_summary)
 
     logger.info("=== 週次トレンド収集完了 ===")
 
