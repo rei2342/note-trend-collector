@@ -3,7 +3,6 @@ import logging
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime
-from collectors.x_collector import XPost
 from analyzer import AnalyzedNote, AnalyzedHatena, PatternStats
 import config
 
@@ -13,24 +12,20 @@ PAID_POS_LABEL = {"early": "序盤（〜35%）", "middle": "中盤（35〜65%）
 
 
 def _md_to_html_basic(text: str) -> str:
-    """Markdownの基本要素をHTMLに変換（外部ライブラリ不使用）"""
     import re
     lines = text.split("\n")
     html_lines = []
     for line in lines:
-        # 見出し
         if line.startswith("### "):
             html_lines.append(f"<h3 style='color:#333;margin-top:20px'>{line[4:]}</h3>")
         elif line.startswith("## "):
             html_lines.append(f"<h2 style='color:#1a1a1a;border-bottom:2px solid #41b883;padding-bottom:6px'>{line[3:]}</h2>")
         elif line.startswith("# "):
             html_lines.append(f"<h1 style='color:#1a1a1a'>{line[2:]}</h1>")
-        # 箇条書き
         elif line.startswith("- "):
             html_lines.append(f"<li style='margin:4px 0'>{line[2:]}</li>")
         elif line.startswith("* "):
             html_lines.append(f"<li style='margin:4px 0'>{line[2:]}</li>")
-        # 太字
         else:
             line = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", line)
             line = re.sub(r"`(.+?)`", r"<code style='background:#f0f0f0;padding:2px 4px'>\1</code>", line)
@@ -46,7 +41,6 @@ class EmailSender:
         self,
         note_data: tuple[list[AnalyzedNote], PatternStats],
         hatena_data: tuple[list[AnalyzedHatena], PatternStats],
-        x_posts: list[XPost],
         trend_summary: str,
     ):
         if not config.GMAIL_ADDRESS or not config.GMAIL_APP_PASSWORD:
@@ -54,9 +48,9 @@ class EmailSender:
         if not config.REPORT_TO_EMAILS:
             raise ValueError("REPORT_TO_EMAILS が未設定です")
 
-        html_body = self._build_html(note_data, hatena_data, x_posts, trend_summary)
+        html_body = self._build_html(note_data, hatena_data, trend_summary)
         date_str = datetime.now().strftime("%Y/%m/%d")
-        subject = f"【週次トレンドレポート】{date_str} note・はてブ・X 人気記事まとめ"
+        subject = f"【週次トレンドレポート】{date_str} note・はてブ 人気記事まとめ"
 
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
@@ -79,14 +73,13 @@ class EmailSender:
         self,
         note_data: tuple[list[AnalyzedNote], PatternStats],
         hatena_data: tuple[list[AnalyzedHatena], PatternStats],
-        x_posts: list[XPost],
         trend_summary: str,
     ) -> str:
         note_articles, note_stats = note_data
         hatena_entries, hatena_stats = hatena_data
         date_str = datetime.now().strftime("%Y年%m月%d日")
 
-        # --- note記事HTML ---
+        # note記事HTML
         note_rows = ""
         for a in note_articles[:20]:
             paid_badge = (
@@ -112,7 +105,7 @@ class EmailSender:
               </td>
             </tr>"""
 
-        # --- はてブHTML ---
+        # はてブHTML
         hatena_rows = ""
         for e in hatena_entries[:15]:
             hatena_rows += f"""
@@ -127,22 +120,6 @@ class EmailSender:
               </td>
             </tr>"""
 
-        # --- X投稿HTML ---
-        x_rows = ""
-        for p in x_posts[:10]:
-            x_rows += f"""
-            <tr style='border-bottom:1px solid #eee'>
-              <td style='padding:10px'>
-                <a href="{p.url}" style='color:#1da1f2;text-decoration:none'>{p.text[:100]}...</a>
-                <br><small style='color:#888'>{p.author_name} ／ いいね {p.like_count} ／ RT {p.retweet_count}</small>
-                {f'<br><small><a href="{p.note_url}" style="color:#41b883">{p.note_url}</a></small>' if p.note_url else ''}
-              </td>
-            </tr>"""
-
-        if not x_rows:
-            x_rows = "<tr><td style='padding:10px;color:#999'>X投稿データなし（X_BEARER_TOKEN未設定）</td></tr>"
-
-        # --- 統計サマリーHTML ---
         def pattern_bars(counts: dict) -> str:
             total = sum(counts.values()) or 1
             bars = ""
@@ -165,7 +142,7 @@ class EmailSender:
 
 <div style="background:#fff;border-radius:8px;padding:24px;margin-bottom:20px;box-shadow:0 2px 4px rgba(0,0,0,.08)">
   <h1 style="color:#1a1a1a;font-size:22px;margin:0 0 6px">週次トレンドレポート</h1>
-  <p style="color:#888;margin:0">{date_str} 自動収集 ／ note・はてブ・X</p>
+  <p style="color:#888;margin:0">{date_str} 自動収集 ／ note・はてブ</p>
 </div>
 
 <!-- AIサマリー -->
@@ -209,14 +186,6 @@ class EmailSender:
       </tr>
     </thead>
     <tbody>{hatena_rows}</tbody>
-  </table>
-</div>
-
-<!-- X -->
-<div style="background:#fff;border-radius:8px;padding:24px;margin-bottom:20px;box-shadow:0 2px 4px rgba(0,0,0,.08)">
-  <h2 style="color:#1da1f2;font-size:18px;margin:0 0 16px">X(Twitter) バズ投稿（いいね{config.X_MIN_LIKES}以上・note含む）</h2>
-  <table style="width:100%;border-collapse:collapse">
-    <tbody>{x_rows}</tbody>
   </table>
 </div>
 
