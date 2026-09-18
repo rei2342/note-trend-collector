@@ -1,5 +1,9 @@
 import smtplib
 import logging
+import ssl
+from html import escape
+from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime
@@ -13,7 +17,7 @@ PAID_POS_LABEL = {"early": "序盤（〜35%）", "middle": "中盤（35〜65%）
 
 def _md_to_html_basic(text: str) -> str:
     import re
-    lines = text.split("\n")
+    lines = escape(text).split("\n")
     html_lines = []
     for line in lines:
         if line.startswith("### "):
@@ -33,6 +37,18 @@ def _md_to_html_basic(text: str) -> str:
     return "\n".join(html_lines)
 
 
+def _safe_url(value: str) -> str:
+    try:
+        parsed = urlsplit(value)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username:
+            return "#"
+        if any(ord(c) < 32 or c.isspace() for c in value):
+            return "#"
+        return escape(value, quote=True)
+    except ValueError:
+        return "#"
+
+
 class EmailSender:
     SMTP_HOST = "smtp.gmail.com"
     SMTP_PORT = 587
@@ -49,25 +65,27 @@ class EmailSender:
             raise ValueError("REPORT_TO_EMAILS が未設定です")
 
         html_body = self._build_html(note_data, hatena_data, trend_summary)
-        date_str = datetime.now().strftime("%Y/%m/%d")
+        date_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y/%m/%d")
         subject = f"【週次トレンドレポート】{date_str} note・はてブ 人気記事まとめ"
 
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
         msg["From"] = config.GMAIL_ADDRESS
         msg["To"] = ", ".join(config.REPORT_TO_EMAILS)
+        msg.attach(MIMEText(trend_summary, "plain", "utf-8"))
         msg.attach(MIMEText(html_body, "html", "utf-8"))
 
-        with smtplib.SMTP(self.SMTP_HOST, self.SMTP_PORT) as server:
+        with smtplib.SMTP(self.SMTP_HOST, self.SMTP_PORT, timeout=30) as server:
             server.ehlo()
-            server.starttls()
+            server.starttls(context=ssl.create_default_context())
+            server.ehlo()
             server.login(config.GMAIL_ADDRESS, config.GMAIL_APP_PASSWORD)
             server.sendmail(
                 config.GMAIL_ADDRESS,
                 config.REPORT_TO_EMAILS,
                 msg.as_string(),
             )
-        logger.info(f"メール送信完了 → {config.REPORT_TO_EMAILS}")
+        logger.info("メール送信完了（%d宛先）", len(config.REPORT_TO_EMAILS))
 
     def _build_html(
         self,
@@ -77,7 +95,7 @@ class EmailSender:
     ) -> str:
         note_articles, note_stats = note_data
         hatena_entries, hatena_stats = hatena_data
-        date_str = datetime.now().strftime("%Y年%m月%d日")
+        date_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y年%m月%d日")
 
         # note記事HTML
         note_rows = ""
@@ -87,16 +105,16 @@ class EmailSender:
                 if a.is_paid else ""
             )
             paid_pos_str = PAID_POS_LABEL.get(a.paid_position or "", "") if a.paid_position else ""
-            headings_str = "<br>".join(a.headings[:5]) if a.headings else "（見出し情報なし）"
+            headings_str = "<br>".join(escape(h) for h in a.headings[:5]) if a.headings else "（見出し情報なし）"
             note_rows += f"""
             <tr style='border-bottom:1px solid #eee'>
               <td style='padding:10px;vertical-align:top'>
-                {paid_badge}<a href="{a.url}" style='color:#41b883;text-decoration:none;font-weight:bold'>{a.title}</a>
-                <br><small style='color:#888'>@{a.author} ／ #{a.tag} ／ いいね {a.like_count}</small>
-                <br><small style='color:#666'>{a.description[:120]}...</small>
+                {paid_badge}<a href="{_safe_url(a.url)}" style='color:#41b883;text-decoration:none;font-weight:bold'>{escape(str(a.title))}</a>
+                <br><small style='color:#888'>@{escape(str(a.author))} ／ #{escape(str(a.tag))} ／ いいね {a.like_count}</small>
+                <br><small style='color:#666'>{escape(str(a.description[:120]))}...</small>
               </td>
               <td style='padding:10px;vertical-align:top;font-size:12px;color:#555;min-width:160px'>
-                <strong>型:</strong> {a.title_pattern}<br>
+                <strong>型:</strong> {escape(str(a.title_pattern))}<br>
                 <strong>見出し:</strong> {a.heading_count}個 (h{a.heading_depth}まで)<br>
                 {f'<strong>有料化:</strong> {paid_pos_str}' if paid_pos_str else ''}
               </td>
@@ -111,12 +129,12 @@ class EmailSender:
             hatena_rows += f"""
             <tr style='border-bottom:1px solid #eee'>
               <td style='padding:10px'>
-                <a href="{e.url}" style='color:#0078d4;text-decoration:none;font-weight:bold'>{e.title}</a>
-                <br><small style='color:#888'>ブックマーク {e.bookmark_count} ／ {e.category}</small>
-                <br><small style='color:#666'>{e.description[:100]}...</small>
+                <a href="{_safe_url(e.url)}" style='color:#0078d4;text-decoration:none;font-weight:bold'>{escape(str(e.title))}</a>
+                <br><small style='color:#888'>ブックマーク {e.bookmark_count} ／ {escape(str(e.category))}</small>
+                <br><small style='color:#666'>{escape(str(e.description[:100]))}...</small>
               </td>
               <td style='padding:10px;font-size:12px;color:#555'>
-                <strong>型:</strong> {e.title_pattern}
+                <strong>型:</strong> {escape(str(e.title_pattern))}
               </td>
             </tr>"""
 
@@ -127,7 +145,7 @@ class EmailSender:
                 pct = int(cnt / total * 100)
                 bars += f"""
                 <div style='margin:4px 0'>
-                  <span style='display:inline-block;width:100px;color:#555'>{name}</span>
+                  <span style='display:inline-block;width:100px;color:#555'>{escape(str(name))}</span>
                   <span style='display:inline-block;background:#41b883;width:{pct * 2}px;height:14px;vertical-align:middle'></span>
                   <span style='color:#888;font-size:12px'> {cnt}件 ({pct}%)</span>
                 </div>"""
@@ -156,7 +174,7 @@ class EmailSender:
   <div style="margin-bottom:12px">
     <strong>タイトルパターン</strong><br>{pattern_bars(note_stats.title_pattern_counts)}
     <br><strong>有料化位置（有料記事）:</strong> {
-      ", ".join(f"{PAID_POS_LABEL.get(k,k)}:{v}件" for k,v in note_stats.paid_position_counts.items()) or "データなし"
+      ", ".join(f"{escape(str(PAID_POS_LABEL.get(k,k)))}:{v}件" for k,v in note_stats.paid_position_counts.items()) or "データなし"
     }<br>
     <strong>平均見出し数:</strong> {note_stats.avg_heading_count}個
   </div>
