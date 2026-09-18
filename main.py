@@ -46,6 +46,9 @@ def main():
     hatena_entries = HatenaCollector().collect()
     logger.info(f"はてブ: {len(hatena_entries)}件収集")
 
+    if not note_articles and not hatena_entries:
+        raise RuntimeError("両媒体の取得が0件です。分析・メール送信を中止します。")
+
     analyzer = ContentAnalyzer()
     note_data = analyzer.analyze_note_articles(note_articles)
     hatena_data = analyzer.analyze_hatena_entries(hatena_entries)
