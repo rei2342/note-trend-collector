@@ -14,7 +14,7 @@ class HatenaEntry:
     title: str
     url: str
     description: str
-    bookmark_count: int = 0
+    bookmark_count: int | None = None
     category: str = ""
     tags: list[str] = field(default_factory=list)
 
@@ -41,8 +41,13 @@ class HatenaCollector:
     def collect(self) -> list[HatenaEntry]:
         entries: list[HatenaEntry] = []
         seen_urls: set[str] = set()
+        seen_categories: set[str] = set()
 
         for category in config.HATENA_CATEGORIES:
+            canonical = self.CATEGORY_MAP.get(category, category)
+            if canonical in seen_categories:
+                continue
+            seen_categories.add(canonical)
             logger.info(f"はてブ収集中: {category}")
             try:
                 rss_entries = self._fetch_rss(category)
@@ -58,21 +63,25 @@ class HatenaCollector:
         filtered = [e for e in entries if self._is_relevant(e)]
 
         # ブックマーク数取得（Hatena Entry API）
-        for entry in filtered[: config.HATENA_ENTRIES_COUNT]:
+        # 件数は処理予算。未取得の記事まで人気順に並べたように見せない。
+        candidates = filtered[: config.HATENA_ENTRIES_COUNT]
+        for entry in candidates:
             try:
                 self._enrich_bookmark_count(entry)
                 time.sleep(0.5)
             except Exception as ex:
                 logger.warning(f"ブックマーク数取得失敗 {entry.url}: {ex}")
 
-        return sorted(filtered, key=lambda e: e.bookmark_count, reverse=True)[
-            : config.HATENA_ENTRIES_COUNT
-        ]
+        return sorted(candidates, key=lambda e: e.bookmark_count if e.bookmark_count is not None else -1, reverse=True)
 
     def _fetch_rss(self, category: str) -> list[HatenaEntry]:
         rss_category = self.CATEGORY_MAP.get(category, category)
         url = self.RSS_BASE.format(category=rss_category)
-        feed = feedparser.parse(url)
+        response = self.session.get(url, timeout=config.REQUEST_TIMEOUT)
+        response.raise_for_status()
+        feed = feedparser.parse(response.content)
+        if feed.bozo:
+            raise ValueError("RSS形式の解析に失敗しました")
 
         entries = []
         for item in feed.entries:
@@ -98,8 +107,8 @@ class HatenaCollector:
         resp = self.session.get(
             api_url, params={"url": entry.url}, timeout=config.REQUEST_TIMEOUT
         )
-        if resp.status_code == 200:
-            try:
-                entry.bookmark_count = int(resp.text.strip())
-            except ValueError:
-                pass
+        resp.raise_for_status()
+        count = int(resp.text.strip())
+        if count < 0:
+            raise ValueError("ブックマーク数が負数です")
+        entry.bookmark_count = count
