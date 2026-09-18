@@ -130,7 +130,7 @@ class EmailSender:
             <tr style='border-bottom:1px solid #eee'>
               <td style='padding:10px'>
                 <a href="{_safe_url(e.url)}" style='color:#0078d4;text-decoration:none;font-weight:bold'>{escape(str(e.title))}</a>
-                <br><small style='color:#888'>ブックマーク {e.bookmark_count} ／ {escape(str(e.category))}</small>
+                <br><small style='color:#888'>ブックマーク {e.bookmark_count if e.bookmark_count is not None else '未取得'} ／ {escape(str(e.category))}</small>
                 <br><small style='color:#666'>{escape(str(e.description[:100]))}...</small>
               </td>
               <td style='padding:10px;font-size:12px;color:#555'>
