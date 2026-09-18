@@ -111,7 +111,8 @@ def _fallback_summary(note_articles, note_stats, hatena_entries, hatena_stats) -
     for a in note_articles[:3]:
         lines.append(f"- note: {a.title} / いいね {a.like_count} / {a.url}")
     for e in hatena_entries[:3]:
-        lines.append(f"- はてブ: {e.title} / ブックマーク {e.bookmark_count} / {e.url}")
+        count = e.bookmark_count if e.bookmark_count is not None else "未取得"
+        lines.append(f"- はてブ: {e.title} / ブックマーク {count} / {e.url}")
     return "\n".join(lines)
 
 
