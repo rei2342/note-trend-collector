@@ -28,10 +28,12 @@ class NoteCollector:
     ARTICLE_BASE = "https://note.com"
 
     def __init__(self):
+        self.warnings: list[str] = []
         self.session = requests.Session()
         self.session.headers.update(config.REQUEST_HEADERS)
 
     def collect(self) -> list[NoteArticle]:
+        self.warnings = []
         articles: list[NoteArticle] = []
         seen_urls: set[str] = set()
 
@@ -46,6 +48,7 @@ class NoteCollector:
                         articles.append(a)
                 time.sleep(config.REQUEST_DELAY)
             except Exception as e:
+                self.warnings.append(f"noteタグ「{tag}」の取得に失敗しました。")
                 logger.warning(f"タグ '{tag}' の収集失敗: {e}")
 
         top_articles = sorted(articles, key=lambda a: a.like_count, reverse=True)[
@@ -56,6 +59,7 @@ class NoteCollector:
                 self._enrich_article(article)
                 time.sleep(config.REQUEST_DELAY)
             except Exception as e:
+                self.warnings.append("note記事の公開本文・見出しの取得に失敗しました。")
                 logger.warning(f"記事詳細取得失敗 {article.url}: {e}")
 
         return top_articles
