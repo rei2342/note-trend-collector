@@ -3,7 +3,8 @@ from unittest.mock import Mock
 
 from analyzer import ContentAnalyzer
 from collectors.note_collector import NoteArticle, NoteCollector
-from mailer import EmailSender
+from mailer import EmailSender, _md_to_html_basic
+from bs4 import BeautifulSoup
 
 
 class ReportQualityTests(unittest.TestCase):
@@ -60,6 +61,36 @@ class ReportQualityTests(unittest.TestCase):
         self.assertIn("集計 1件 ／ 掲載 1件", html)
         self.assertIn("本文取得済み 0件のみ", html)
         self.assertNotIn("h0まで", html)
+
+    def test_plaintext_contains_source_and_scope(self):
+        analyzer = ContentAnalyzer()
+        article = self.article()
+        article.url = "https://note.com/test/n/n1?a=1&b=2"
+        result = EmailSender()._build_plain(
+            analyzer.analyze_note_articles([article]),
+            analyzer.analyze_hatena_entries([]), "収集警告\n分析本文",
+        )
+        self.assertTrue(result.startswith("収集警告\n分析本文"))
+        self.assertIn(article.url, result)
+        self.assertIn("集計 1件 ／ 掲載 1件", result)
+
+    def test_plaintext_rejects_unsafe_source(self):
+        analyzer = ContentAnalyzer()
+        article = self.article()
+        article.url = "javascript:alert(1)"
+        result = EmailSender()._build_plain(
+            analyzer.analyze_note_articles([article]),
+            analyzer.analyze_hatena_entries([]), "分析本文",
+        )
+        self.assertNotIn("javascript:", result)
+        self.assertIn("安全な出典URLを取得できません", result)
+
+    def test_markdown_list_has_valid_parent(self):
+        html = _md_to_html_basic("- A\n* B\n\n本文\n- C")
+        soup = BeautifulSoup(html, "html.parser")
+        self.assertEqual(len(soup.find_all("ul")), 2)
+        self.assertEqual(len(soup.find_all("li")), 3)
+        self.assertTrue(all(li.parent.name == "ul" for li in soup.find_all("li")))
 
 
 if __name__ == "__main__":
