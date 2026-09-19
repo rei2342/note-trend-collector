@@ -35,10 +35,12 @@ class HatenaCollector:
     ]
 
     def __init__(self):
+        self.warnings: list[str] = []
         self.session = requests.Session()
         self.session.headers.update(config.REQUEST_HEADERS)
 
     def collect(self) -> list[HatenaEntry]:
+        self.warnings = []
         entries: list[HatenaEntry] = []
         seen_urls: set[str] = set()
         seen_categories: set[str] = set()
@@ -57,6 +59,7 @@ class HatenaCollector:
                         entries.append(e)
                 time.sleep(config.REQUEST_DELAY)
             except Exception as ex:
+                self.warnings.append(f"はてブカテゴリ「{category}」の取得に失敗しました。")
                 logger.warning(f"はてブ '{category}' の収集失敗: {ex}")
 
         # キャリア・ビジネス系フィルタ
@@ -70,6 +73,7 @@ class HatenaCollector:
                 self._enrich_bookmark_count(entry)
                 time.sleep(0.5)
             except Exception as ex:
+                self.warnings.append("はてブ記事のブックマーク数を取得できませんでした。")
                 logger.warning(f"ブックマーク数取得失敗 {entry.url}: {ex}")
 
         return sorted(candidates, key=lambda e: e.bookmark_count if e.bookmark_count is not None else -1, reverse=True)
