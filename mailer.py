@@ -104,15 +104,15 @@ class EmailSender:
                  "指定タグ・RSSと取得上限内の候補です。市場全体の順位・売上・今週の伸びを示すものではありません。",
                  f"note：集計 {len(notes)}件 ／ 掲載 {min(len(notes), 20)}件",
                  f"公開本文取得済み {stats.heading_sample_count}件。未取得は見出し数の平均から除外します。"]
-        for article in notes[:20]:
+        for idx, article in enumerate(notes[:20], 1):
             url = _safe_url(article.url)
-            lines.extend([f"・{article.title} ／ #{article.tag} ／ いいね {article.like_count}",
+            lines.extend([f"・[N{idx}] {article.title} ／ #{article.tag} ／ いいね {article.like_count}",
                           unescape(url) if url != "#" else "（安全な出典URLを取得できませんでした）"])
         lines.extend(["", f"はてブ：集計 {len(entries)}件 ／ 掲載 {min(len(entries), 15)}件"])
-        for entry in entries[:15]:
+        for idx, entry in enumerate(entries[:15], 1):
             url = _safe_url(entry.url)
             count = entry.bookmark_count if entry.bookmark_count is not None else "未取得"
-            lines.extend([f"・{entry.title} ／ ブックマーク {count}",
+            lines.extend([f"・[H{idx}] {entry.title} ／ ブックマーク {count}",
                           unescape(url) if url != "#" else "（安全な出典URLを取得できませんでした）"])
         return "\n".join(lines)
 
@@ -128,7 +128,7 @@ class EmailSender:
 
         # note記事HTML
         note_rows = ""
-        for a in note_articles[:20]:
+        for idx, a in enumerate(note_articles[:20], 1):
             paid_badge = (
                 f"<span style='background:#e74c3c;color:#fff;padding:2px 6px;border-radius:3px;font-size:11px'>有料</span> "
                 if a.is_paid else ""
@@ -142,7 +142,7 @@ class EmailSender:
             note_rows += f"""
             <tr style='border-bottom:1px solid #eee'>
               <td style='padding:10px;vertical-align:top'>
-                {paid_badge}<a href="{_safe_url(a.url)}" style='color:#41b883;text-decoration:none;font-weight:bold'>{escape(str(a.title))}</a>
+                [N{idx}] {paid_badge}<a href="{_safe_url(a.url)}" style='color:#41b883;text-decoration:none;font-weight:bold'>{escape(str(a.title))}</a>
                 <br><small style='color:#888'>@{escape(str(a.author))} ／ #{escape(str(a.tag))} ／ いいね {a.like_count}</small>
                 <br><small style='color:#666'>{escape(str(a.description[:120]))}...</small>
               </td>
@@ -158,11 +158,11 @@ class EmailSender:
 
         # はてブHTML
         hatena_rows = ""
-        for e in hatena_entries[:15]:
+        for idx, e in enumerate(hatena_entries[:15], 1):
             hatena_rows += f"""
             <tr style='border-bottom:1px solid #eee'>
               <td style='padding:10px'>
-                <a href="{_safe_url(e.url)}" style='color:#0078d4;text-decoration:none;font-weight:bold'>{escape(str(e.title))}</a>
+                [H{idx}] <a href="{_safe_url(e.url)}" style='color:#0078d4;text-decoration:none;font-weight:bold'>{escape(str(e.title))}</a>
                 <br><small style='color:#888'>ブックマーク {e.bookmark_count if e.bookmark_count is not None else '未取得'} ／ {escape(str(e.category))}</small>
                 <br><small style='color:#666'>{escape(str(e.description[:100]))}...</small>
               </td>
