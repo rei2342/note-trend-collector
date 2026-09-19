@@ -1,7 +1,7 @@
 import smtplib
 import logging
 import ssl
-from html import escape
+from html import escape, unescape
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 from email.mime.multipart import MIMEMultipart
@@ -19,7 +19,15 @@ def _md_to_html_basic(text: str) -> str:
     import re
     lines = escape(text).split("\n")
     html_lines = []
+    in_list = False
     for line in lines:
+        is_item = line.startswith(("- ", "* "))
+        if in_list and not is_item:
+            html_lines.append("</ul>")
+            in_list = False
+        if is_item and not in_list:
+            html_lines.append("<ul>")
+            in_list = True
         if line.startswith("### "):
             html_lines.append(f"<h3 style='color:#333;margin-top:20px'>{line[4:]}</h3>")
         elif line.startswith("## "):
@@ -34,6 +42,8 @@ def _md_to_html_basic(text: str) -> str:
             line = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", line)
             line = re.sub(r"`(.+?)`", r"<code style='background:#f0f0f0;padding:2px 4px'>\1</code>", line)
             html_lines.append(f"<p style='margin:6px 0'>{line}</p>" if line.strip() else "<br>")
+    if in_list:
+        html_lines.append("</ul>")
     return "\n".join(html_lines)
 
 
@@ -66,13 +76,13 @@ class EmailSender:
 
         html_body = self._build_html(note_data, hatena_data, trend_summary)
         date_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y/%m/%d")
-        subject = f"【週次トレンドレポート】{date_str} note・はてブ 人気記事まとめ"
+        subject = f"【週次トレンドレポート】{date_str} note・はてブ 収集記事まとめ"
 
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
         msg["From"] = config.GMAIL_ADDRESS
         msg["To"] = ", ".join(config.REPORT_TO_EMAILS)
-        msg.attach(MIMEText(trend_summary, "plain", "utf-8"))
+        msg.attach(MIMEText(self._build_plain(note_data, hatena_data, trend_summary), "plain", "utf-8"))
         msg.attach(MIMEText(html_body, "html", "utf-8"))
 
         with smtplib.SMTP(self.SMTP_HOST, self.SMTP_PORT, timeout=30) as server:
@@ -86,6 +96,25 @@ class EmailSender:
                 msg.as_string(),
             )
         logger.info("メール送信完了（%d宛先）", len(config.REPORT_TO_EMAILS))
+
+    def _build_plain(self, note_data, hatena_data, trend_summary) -> str:
+        notes, stats = note_data
+        entries, _ = hatena_data
+        lines = [trend_summary, "", "出典・収集範囲",
+                 "指定タグ・RSSと取得上限内の候補です。市場全体の順位・売上・今週の伸びを示すものではありません。",
+                 f"note：集計 {len(notes)}件 ／ 掲載 {min(len(notes), 20)}件",
+                 f"公開本文取得済み {stats.heading_sample_count}件。未取得は見出し数の平均から除外します。"]
+        for article in notes[:20]:
+            url = _safe_url(article.url)
+            lines.extend([f"・{article.title} ／ #{article.tag} ／ いいね {article.like_count}",
+                          unescape(url) if url != "#" else "（安全な出典URLを取得できませんでした）"])
+        lines.extend(["", f"はてブ：集計 {len(entries)}件 ／ 掲載 {min(len(entries), 15)}件"])
+        for entry in entries[:15]:
+            url = _safe_url(entry.url)
+            count = entry.bookmark_count if entry.bookmark_count is not None else "未取得"
+            lines.extend([f"・{entry.title} ／ ブックマーク {count}",
+                          unescape(url) if url != "#" else "（安全な出典URLを取得できませんでした）"])
+        return "\n".join(lines)
 
     def _build_html(
         self,
