@@ -12,7 +12,7 @@ import config
 
 logger = logging.getLogger(__name__)
 
-PAID_POS_LABEL = {"early": "序盤（〜35%）", "middle": "中盤（35〜65%）", "late": "終盤（65%〜）"}
+PAID_POS_LABEL = {"early": "序盤（HTML構造による推定）", "middle": "中盤（HTML構造による推定）", "late": "終盤（HTML構造による推定）"}
 
 
 def _md_to_html_basic(text: str) -> str:
@@ -106,6 +106,10 @@ class EmailSender:
             )
             paid_pos_str = PAID_POS_LABEL.get(a.paid_position or "", "") if a.paid_position else ""
             headings_str = "<br>".join(escape(h) for h in a.headings[:5]) if a.headings else "（見出し情報なし）"
+            heading_label = (
+                f"{a.heading_count}個" + (f" (h{a.heading_depth}まで)" if a.heading_depth else "")
+                if a.details_fetched else "未取得"
+            )
             note_rows += f"""
             <tr style='border-bottom:1px solid #eee'>
               <td style='padding:10px;vertical-align:top'>
@@ -115,7 +119,7 @@ class EmailSender:
               </td>
               <td style='padding:10px;vertical-align:top;font-size:12px;color:#555;min-width:160px'>
                 <strong>型:</strong> {escape(str(a.title_pattern))}<br>
-                <strong>見出し:</strong> {a.heading_count}個 (h{a.heading_depth}まで)<br>
+                <strong>公開部分の見出し:</strong> {heading_label}<br>
                 {f'<strong>有料化:</strong> {paid_pos_str}' if paid_pos_str else ''}
               </td>
               <td style='padding:10px;vertical-align:top;font-size:11px;color:#777;max-width:200px'>
@@ -170,13 +174,15 @@ class EmailSender:
 
 <!-- note人気記事 -->
 <div style="background:#fff;border-radius:8px;padding:24px;margin-bottom:20px;box-shadow:0 2px 4px rgba(0,0,0,.08)">
-  <h2 style="color:#41b883;font-size:18px;margin:0 0 16px">note 人気記事</h2>
+  <h2 style="color:#41b883;font-size:18px;margin:0 0 16px">note 収集記事</h2>
+  <p>集計 {len(note_articles)}件 ／ 掲載 {min(len(note_articles), 20)}件。指定タグから取得できた範囲であり、note全体の順位・売上・今週の伸びを示すものではありません。</p>
   <div style="margin-bottom:12px">
     <strong>タイトルパターン</strong><br>{pattern_bars(note_stats.title_pattern_counts)}
     <br><strong>有料化位置（有料記事）:</strong> {
       ", ".join(f"{escape(str(PAID_POS_LABEL.get(k,k)))}:{v}件" for k,v in note_stats.paid_position_counts.items()) or "データなし"
     }<br>
-    <strong>平均見出し数:</strong> {note_stats.avg_heading_count}個
+    <strong>公開部分の平均見出し数:</strong> {str(note_stats.avg_heading_count) + '個' if note_stats.avg_heading_count is not None else '未取得'}
+    （本文取得済み {note_stats.heading_sample_count}件のみ。未取得はゼロ扱いせず除外。有料部分は対象外）
   </div>
   <table style="width:100%;border-collapse:collapse">
     <thead>
@@ -193,6 +199,7 @@ class EmailSender:
 <!-- はてブ -->
 <div style="background:#fff;border-radius:8px;padding:24px;margin-bottom:20px;box-shadow:0 2px 4px rgba(0,0,0,.08)">
   <h2 style="color:#0078d4;font-size:18px;margin:0 0 16px">はてブ ホットエントリ（ビジネス・キャリア系）</h2>
+  <p>集計 {len(hatena_entries)}件 ／ 掲載 {min(len(hatena_entries), 15)}件。指定RSS・絞り込み条件・取得上限内の候補です。</p>
   <div style="margin-bottom:12px">
     <strong>タイトルパターン</strong><br>{pattern_bars(hatena_stats.title_pattern_counts)}
   </div>
