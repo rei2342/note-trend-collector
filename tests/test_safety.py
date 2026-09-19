@@ -90,6 +90,21 @@ class SafetyTests(unittest.TestCase):
                 main.main()
         sender.assert_not_called()
 
+    def test_partial_collection_notice_reaches_mail(self):
+        with patch("main.validate_config"), patch("main.NoteCollector") as note, patch("main.HatenaCollector") as hatena, patch("main.ContentAnalyzer") as analyzer, patch("main.TrendSummarizer") as summary, patch("main.EmailSender") as sender:
+            note.return_value.collect.return_value = [object()]
+            note.return_value.warnings = ["一部タグを取得できませんでした。"]
+            hatena.return_value.collect.return_value = []
+            hatena.return_value.warnings = []
+            analyzer.return_value.analyze_note_articles.return_value = self.notes
+            analyzer.return_value.analyze_hatena_entries.return_value = self.empty
+            summary.return_value.generate_summary.return_value = "分析本文"
+            main.main()
+        delivered = sender.return_value.send_weekly_report.call_args.args[2]
+        self.assertIn("一部タグを取得できません", delivered)
+        self.assertIn("はてブは0件", delivered)
+        self.assertTrue(delivered.endswith("分析本文"))
+
 
 if __name__ == "__main__":
     unittest.main()
