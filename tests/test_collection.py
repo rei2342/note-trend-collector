@@ -2,9 +2,28 @@ import unittest
 from unittest.mock import patch, Mock
 import requests
 from collectors.hatena_collector import HatenaCollector, HatenaEntry
+from collectors.note_collector import NoteCollector, NoteArticle
 
 
 class CollectionTests(unittest.TestCase):
+    def test_note_partial_failure_is_reportable(self):
+        collector = NoteCollector()
+        article = NoteArticle("title", "https://note.com/test/n/n1", "author", "ok")
+        with patch("config.NOTE_TAGS", ["failed", "ok"]), patch.object(collector, "_fetch_by_tag", side_effect=[RuntimeError("private error"), [article]]), patch.object(collector, "_enrich_article", side_effect=RuntimeError("private error")), patch("time.sleep"):
+            self.assertEqual(collector.collect(), [article])
+        self.assertEqual(len(collector.warnings), 2)
+        self.assertIn("failed", collector.warnings[0])
+        self.assertNotIn("private error", str(collector.warnings))
+
+    def test_hatena_failure_warnings_reset_between_runs(self):
+        collector = HatenaCollector()
+        with patch("config.HATENA_CATEGORIES", ["economics"]), patch.object(collector, "_fetch_rss", side_effect=RuntimeError("failure")):
+            self.assertEqual(collector.collect(), [])
+        self.assertEqual(len(collector.warnings), 1)
+        with patch("config.HATENA_CATEGORIES", []):
+            collector.collect()
+        self.assertEqual(collector.warnings, [])
+
     def test_rss_uses_timeout_and_http_status(self):
         collector = HatenaCollector()
         response = Mock(content=b'<?xml version="1.0"?><rss version="2.0"><channel><title>test</title></channel></rss>')
