@@ -83,7 +83,8 @@ def _build_analysis_prompt(
     for idx, a in enumerate(note_articles[:20], 1):
         records.append({"source_id": f"N{idx}", "url": a.url, "title": a.title,
                         "description": a.description[:150], "like_count": a.like_count,
-                        "is_paid": a.is_paid, "headings": a.headings[:5]})
+                        "is_paid": a.is_paid, "headings": a.headings[:5],
+                        "public_body_fetched": a.details_fetched})
     for idx, e in enumerate(hatena_entries[:10], 1):
         records.append({"source_id": f"H{idx}", "url": e.url, "title": e.title,
                         "description": e.description[:100],
