@@ -40,11 +40,16 @@ def main():
     validate_config()
     logger.info("=== 週次トレンド収集開始 ===")
 
-    note_articles = NoteCollector().collect()
+    note_collector = NoteCollector()
+    note_articles = note_collector.collect()
     logger.info(f"note: {len(note_articles)}件収集")
 
-    hatena_entries = HatenaCollector().collect()
+    hatena_collector = HatenaCollector()
+    hatena_entries = hatena_collector.collect()
     logger.info(f"はてブ: {len(hatena_entries)}件収集")
+
+    if not note_articles and not hatena_entries:
+        raise RuntimeError("両媒体の取得が0件です。分析・メール送信を中止します。")
 
     analyzer = ContentAnalyzer()
     note_data = analyzer.analyze_note_articles(note_articles)
@@ -52,6 +57,20 @@ def main():
 
     summarizer = TrendSummarizer()
     trend_summary = summarizer.generate_summary(note_data, hatena_data)
+
+    warnings = note_collector.warnings + hatena_collector.warnings
+    if not note_articles:
+        warnings.append("noteは0件です。noteの傾向は判断できません。")
+    if not hatena_entries:
+        warnings.append("はてブは0件です。はてブの傾向は判断できません。")
+    if warnings:
+        # 外部エラー本文や認証情報は含めず、欠損の種類を必ず利用者に伝える。
+        notice = "\n".join(f"- {item}" for item in dict.fromkeys(warnings))
+        trend_summary = (
+            "## 収集範囲の注意\n" + notice
+            + "\n以下は取得できた範囲の分析です。市場全体の傾向ではありません。\n\n"
+            + trend_summary
+        )
 
     mailer = EmailSender()
     mailer.send_weekly_report(note_data, hatena_data, trend_summary)

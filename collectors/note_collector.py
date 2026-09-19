@@ -21,6 +21,7 @@ class NoteArticle:
     headings: list[str] = field(default_factory=list)
     paid_position: Optional[str] = None
     description: str = ""
+    details_fetched: bool = False
 
 
 class NoteCollector:
@@ -28,10 +29,12 @@ class NoteCollector:
     ARTICLE_BASE = "https://note.com"
 
     def __init__(self):
+        self.warnings: list[str] = []
         self.session = requests.Session()
         self.session.headers.update(config.REQUEST_HEADERS)
 
     def collect(self) -> list[NoteArticle]:
+        self.warnings = []
         articles: list[NoteArticle] = []
         seen_urls: set[str] = set()
 
@@ -46,6 +49,7 @@ class NoteCollector:
                         articles.append(a)
                 time.sleep(config.REQUEST_DELAY)
             except Exception as e:
+                self.warnings.append(f"noteタグ「{tag}」の取得に失敗しました。")
                 logger.warning(f"タグ '{tag}' の収集失敗: {e}")
 
         top_articles = sorted(articles, key=lambda a: a.like_count, reverse=True)[
@@ -56,6 +60,7 @@ class NoteCollector:
                 self._enrich_article(article)
                 time.sleep(config.REQUEST_DELAY)
             except Exception as e:
+                self.warnings.append("note記事の公開本文・見出しの取得に失敗しました。")
                 logger.warning(f"記事詳細取得失敗 {article.url}: {e}")
 
         return top_articles
@@ -104,13 +109,16 @@ class NoteCollector:
         if not article_body:
             article_body = soup.find("article")
 
-        if article_body:
+        if article_body is None:
+            raise ValueError("公開本文を特定できませんでした")
+
+        if article_body is not None:
             headings = []
             for tag in article_body.find_all(["h1", "h2", "h3", "h4"]):
                 text = tag.get_text(strip=True)
                 if text:
                     headings.append(f"{tag.name}: {text}")
-            article.headings = headings[:15]
+            article.headings = headings
 
             paid_block = article_body.find(
                 lambda t: t.name and t.get_text(strip=True) in ["続きをみるには", "この続きをみるには", "有料記事"]
@@ -137,3 +145,4 @@ class NoteCollector:
             if not article.description:
                 body_text = article_body.get_text(separator=" ", strip=True)
                 article.description = body_text[:200]
+            article.details_fetched = True

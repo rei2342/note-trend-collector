@@ -26,7 +26,8 @@ class AnalyzedHatena(HatenaEntry):
 class PatternStats:
     title_pattern_counts: dict[str, int] = field(default_factory=dict)
     paid_position_counts: dict[str, int] = field(default_factory=dict)
-    avg_heading_count: float = 0.0
+    avg_heading_count: float | None = None
+    heading_sample_count: int = 0
     top_tags: list[str] = field(default_factory=list)
 
 
@@ -93,14 +94,14 @@ class ContentAnalyzer:
         paid_counts = Counter(
             a.paid_position for a in analyzed if a.is_paid and a.paid_position
         )
-        avg_h = (
-            sum(a.heading_count for a in analyzed) / len(analyzed) if analyzed else 0
-        )
+        known = [a for a in analyzed if a.details_fetched]
+        avg_h = sum(a.heading_count for a in known) / len(known) if known else None
         tags = Counter(a.tag for a in analyzed)
         return PatternStats(
             title_pattern_counts=dict(title_counts),
             paid_position_counts=dict(paid_counts),
-            avg_heading_count=round(avg_h, 1),
+            avg_heading_count=round(avg_h, 1) if avg_h is not None else None,
+            heading_sample_count=len(known),
             top_tags=[t for t, _ in tags.most_common(5)],
         )
 
