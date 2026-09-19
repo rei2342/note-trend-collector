@@ -72,6 +72,7 @@ class ReportQualityTests(unittest.TestCase):
         )
         self.assertTrue(result.startswith("収集警告\n分析本文"))
         self.assertIn(article.url, result)
+        self.assertIn("[N1]", result)
         self.assertIn("集計 1件 ／ 掲載 1件", result)
 
     def test_plaintext_rejects_unsafe_source(self):
@@ -91,6 +92,17 @@ class ReportQualityTests(unittest.TestCase):
         self.assertEqual(len(soup.find_all("ul")), 2)
         self.assertEqual(len(soup.find_all("li")), 3)
         self.assertTrue(all(li.parent.name == "ul" for li in soup.find_all("li")))
+
+    def test_html_source_ids_match_prompt(self):
+        analyzer = ContentAnalyzer()
+        from collectors.hatena_collector import HatenaEntry
+        result = EmailSender()._build_html(
+            analyzer.analyze_note_articles([self.article()]),
+            analyzer.analyze_hatena_entries([HatenaEntry("例", "https://example.com", "")]),
+            "出典 N1 / H1",
+        )
+        self.assertIn("[N1]", result)
+        self.assertIn("[H1]", result)
 
 
 if __name__ == "__main__":
