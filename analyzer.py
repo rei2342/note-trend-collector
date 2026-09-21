@@ -26,7 +26,8 @@ class AnalyzedHatena(HatenaEntry):
 class PatternStats:
     title_pattern_counts: dict[str, int] = field(default_factory=dict)
     paid_position_counts: dict[str, int] = field(default_factory=dict)
-    avg_heading_count: float = 0.0
+    avg_heading_count: float | None = None
+    heading_sample_count: int = 0
     top_tags: list[str] = field(default_factory=list)
 
 
@@ -79,28 +80,20 @@ class ContentAnalyzer:
         parts = []
         if a.heading_count > 0:
             parts.append(f"見出し{a.heading_count}個（最大h{a.heading_depth}）")
-        if a.is_paid:
-            pos_label = {"early": "序盤", "middle": "中盤", "late": "終盤"}.get(
-                a.paid_position or "", "不明"
-            )
-            parts.append(f"有料化位置：{pos_label}")
         if a.headings:
             parts.append(f"主見出し: {a.headings[0].split(': ', 1)[-1][:30]}...")
         return " / ".join(parts) if parts else "構成情報なし"
 
     def _calc_note_stats(self, analyzed: list[AnalyzedNote]) -> PatternStats:
         title_counts = Counter(a.title_pattern for a in analyzed)
-        paid_counts = Counter(
-            a.paid_position for a in analyzed if a.is_paid and a.paid_position
-        )
-        avg_h = (
-            sum(a.heading_count for a in analyzed) / len(analyzed) if analyzed else 0
-        )
+        known = [a for a in analyzed if a.details_fetched]
+        avg_h = sum(a.heading_count for a in known) / len(known) if known else None
         tags = Counter(a.tag for a in analyzed)
         return PatternStats(
             title_pattern_counts=dict(title_counts),
-            paid_position_counts=dict(paid_counts),
-            avg_heading_count=round(avg_h, 1),
+            paid_position_counts={},  # Deprecated: public HTML cannot establish this.
+            avg_heading_count=round(avg_h, 1) if avg_h is not None else None,
+            heading_sample_count=len(known),
             top_tags=[t for t, _ in tags.most_common(5)],
         )
 
@@ -114,3 +107,4 @@ class ContentAnalyzer:
             title_pattern_counts=dict(title_counts),
             top_tags=top_tags,
         )
+
