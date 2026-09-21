@@ -120,29 +120,13 @@ class NoteCollector:
                     headings.append(f"{tag.name}: {text}")
             article.headings = headings
 
-            paid_block = article_body.find(
-                lambda t: t.name and t.get_text(strip=True) in ["続きをみるには", "この続きをみるには", "有料記事"]
-            )
-            if not paid_block:
-                paid_block = soup.find("div", class_=lambda c: c and "paid" in str(c).lower())
-
-            if paid_block:
-                paid_idx = None
-                for i, child in enumerate(article_body.descendants):
-                    if child == paid_block:
-                        paid_idx = i
-                        break
-                total = sum(1 for _ in article_body.descendants)
-                if paid_idx is not None and total > 0:
-                    ratio = paid_idx / total
-                    if ratio < 0.35:
-                        article.paid_position = "early"
-                    elif ratio < 0.65:
-                        article.paid_position = "middle"
-                    else:
-                        article.paid_position = "late"
+            # Public HTML does not include the paid body, so its DOM position
+            # cannot establish where a paywall falls in the complete article.
+            # Keep the dataclass field for compatibility, but do not populate it.
+            article.paid_position = None
 
             if not article.description:
                 body_text = article_body.get_text(separator=" ", strip=True)
                 article.description = body_text[:200]
             article.details_fetched = True
+

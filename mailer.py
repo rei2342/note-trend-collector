@@ -12,7 +12,6 @@ import config
 
 logger = logging.getLogger(__name__)
 
-PAID_POS_LABEL = {"early": "序盤（HTML構造による推定）", "middle": "中盤（HTML構造による推定）", "late": "終盤（HTML構造による推定）"}
 
 
 def _md_to_html_basic(text: str) -> str:
@@ -133,7 +132,6 @@ class EmailSender:
                 f"<span style='background:#e74c3c;color:#fff;padding:2px 6px;border-radius:3px;font-size:11px'>有料</span> "
                 if a.is_paid else ""
             )
-            paid_pos_str = PAID_POS_LABEL.get(a.paid_position or "", "") if a.paid_position else ""
             headings_str = "<br>".join(escape(h) for h in a.headings[:5]) if a.headings else "（見出し情報なし）"
             heading_label = (
                 f"{a.heading_count}個" + (f" (h{a.heading_depth}まで)" if a.heading_depth else "")
@@ -149,7 +147,6 @@ class EmailSender:
               <td style='padding:10px;vertical-align:top;font-size:12px;color:#555;min-width:160px'>
                 <strong>型:</strong> {escape(str(a.title_pattern))}<br>
                 <strong>公開部分の見出し:</strong> {heading_label}<br>
-                {f'<strong>有料化:</strong> {paid_pos_str}' if paid_pos_str else ''}
               </td>
               <td style='padding:10px;vertical-align:top;font-size:11px;color:#777;max-width:200px'>
                 {headings_str}
@@ -207,9 +204,6 @@ class EmailSender:
   <p>集計 {len(note_articles)}件 ／ 掲載 {min(len(note_articles), 20)}件。指定タグから取得できた範囲であり、note全体の順位・売上・今週の伸びを示すものではありません。</p>
   <div style="margin-bottom:12px">
     <strong>タイトルパターン</strong><br>{pattern_bars(note_stats.title_pattern_counts)}
-    <br><strong>有料化位置（有料記事）:</strong> {
-      ", ".join(f"{escape(str(PAID_POS_LABEL.get(k,k)))}:{v}件" for k,v in note_stats.paid_position_counts.items()) or "データなし"
-    }<br>
     <strong>公開部分の平均見出し数:</strong> {str(note_stats.avg_heading_count) + '個' if note_stats.avg_heading_count is not None else '未取得'}
     （本文取得済み {note_stats.heading_sample_count}件のみ。未取得はゼロ扱いせず除外。有料部分は対象外）
   </div>
@@ -245,3 +239,4 @@ class EmailSender:
 
 <p style="color:#bbb;font-size:11px;text-align:center">このメールはnote_trend_collectorにより自動生成されました</p>
 </body></html>"""
+
